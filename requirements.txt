@@ -1,0 +1,10 @@
+# FaceEdit - dependencias de ejecución
+# Python 3.11+ (probado con Python 3.14).
+#
+# DeepFace 0.0.104 usa ONNX Runtime como motor de inferencia, por lo que
+# TensorFlow no es necesario. OpenCV contrib incluye las utilidades de visión.
+Flask==3.1.3
+deepface==0.0.104
+numpy==2.4.6
+onnxruntime==1.31.1
+opencv-contrib-python-headless==4.13.0.92

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#FFFFFF">
+  <meta name="description" content="FaceEdit: análisis facial local con detección de rostro, edad aproximada y emoción predominante.">
+  <title>FaceEdit — Análisis facial inteligente</title>
+  <link rel="icon" href="{{ url_for('static', filename='assets/favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}" aria-label="FaceEdit, inicio">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none">
+          <path d="M24 7c-8.5 0-14 6.4-14 15v4.5C10 35 14.5 41 20 41h1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M24 7c8.5 0 14 6.4 14 15v4.5C38 35 33.5 41 28 41h-1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M18 21.5h.01M30 21.5h.01" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>
+          <path d="M18.5 30c3.2 2.7 7.8 2.7 11 0" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M24 3v6M24 39v6M4 24h6M38 24h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+        </svg>
+      </span>
+      <span class="brand__text">
+        <strong>FaceEdit</strong>
+        <span>Análisis facial inteligente</span>
+      </span>
+    </a>
+
+    <div class="engine-pill" id="enginePill" data-state="checking" role="status" aria-live="polite">
+      <span class="engine-pill__dot" aria-hidden="true"></span>
+      <span id="engineLabel">Comprobando motor IA</span>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="workspace" aria-labelledby="workspaceTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow"><span class="eyebrow__line" aria-hidden="true"></span> Escáner facial</p>
+          <h1 id="workspaceTitle">Tu rostro, <em>bajo análisis.</em></h1>
+        </div>
+        <p class="section-heading__hint">
+          Activa la cámara o carga una fotografía. La detección y el análisis se ejecutan
+          directamente en este equipo.
+        </p>
+      </div>
+
+      <div class="stage-card">
+        <div class="stage" id="stage">
+          <div class="stage__grid" aria-hidden="true"></div>
+
+          <div class="stage__empty" id="emptyState">
+            <div class="face-orbit" aria-hidden="true">
+              <svg viewBox="0 0 240 240" fill="none">
+                <defs>
+                  <linearGradient id="faceGradient" x1="65" y1="48" x2="177" y2="190" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#8B1E1E"/>
+                    <stop offset="1" stop-color="#C97A7A"/>
+                  </linearGradient>
+                  <linearGradient id="beamGradient" x1="60" y1="0" x2="180" y2="0" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#8B1E1E" stop-opacity="0"/>
+                    <stop offset=".5" stop-color="#8B1E1E"/>
+                    <stop offset="1" stop-color="#C97A7A" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <circle class="orbit orbit--outer" cx="120" cy="120" r="101" stroke="#8B1E1E" stroke-opacity=".2" stroke-dasharray="3 10"/>
+                <circle class="orbit orbit--inner" cx="120" cy="120" r="86" stroke="#C97A7A" stroke-opacity=".32" stroke-dasharray="26 16"/>
+                <path d="M76 100c0-28 19-47 44-47s44 19 44 47v19c0 31-20 55-44 55s-44-24-44-55v-19Z" stroke="url(#faceGradient)" stroke-width="2.2"/>
+                <path d="M101 103h.01M139 103h.01" stroke="#5C0F0F" stroke-width="5" stroke-linecap="round"/>
+                <path d="M104 134c9.5 8 22.5 8 32 0" stroke="url(#faceGradient)" stroke-width="2.4" stroke-linecap="round"/>
+                <path class="scan-beam" d="M62 120h116" stroke="url(#beamGradient)" stroke-width="2"/>
+                <path d="M59 82V61h21M181 82V61h-21M59 158v21h21M181 158v21h-21" stroke="#A62B2B" stroke-opacity=".55" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="120" cy="120" r="3" fill="#8B1E1E" fill-opacity=".7"/>
+              </svg>
+            </div>
+            <h2>Sin imagen todavía</h2>
+            <p>Activa tu cámara o sube una foto para comenzar el escaneo.</p>
+            <div class="empty-actions" role="group" aria-label="Acciones para comenzar">
+              <button class="btn btn--primary" id="emptyCameraBtn" type="button">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M15 8.5 13.8 6H9.2L8 8.5H5.8A2.3 2.3 0 0 0 3.5 10.8v6.4a2.3 2.3 0 0 0 2.3 2.3h11.4a2.3 2.3 0 0 0 2.3-2.3v-6.4A2.3 2.3 0 0 0 17.2 8.5H15Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                  <circle cx="11.5" cy="14" r="3.2" stroke="currentColor" stroke-width="1.7"/>
+                </svg>
+                Activar cámara
+              </button>
+              <button class="btn btn--ghost" id="emptyUploadBtn" type="button">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 15.5V4m0 0L7.8 8.2M12 4l4.2 4.2M5 14v4.2A1.8 1.8 0 0 0 6.8 20h10.4a1.8 1.8 0 0 0 1.8-1.8V14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Subir foto
+              </button>
+            </div>
+          </div>
+
+          <video class="stage__media stage__media--video" id="cameraFeed" playsinline muted autoplay hidden></video>
+          <canvas class="stage__media stage__media--photo" id="photoCanvas" hidden aria-label="Fotografía cargada para analizar"></canvas>
+          <canvas class="stage__overlay" id="overlayCanvas" aria-hidden="true" hidden></canvas>
+
+          <div class="scan-line" id="scanLine" hidden aria-hidden="true"></div>
+
+          <div class="stage__hud" id="stageHud" hidden>
+            <div class="live-badge" id="liveBadge">
+              <span class="live-badge__dot" aria-hidden="true"></span>
+              <span id="modeLabel">EN VIVO</span>
+            </div>
+            <div class="face-badge" id="faceBadge" hidden>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8.5 4.5h-3A1.5 1.5 0 0 0 4 6v2.5M15.5 4.5h3A1.5 1.5 0 0 1 20 6v2.5M8.5 19.5h-3A1.5 1.5 0 0 1 4 18v-2.5M15.5 19.5h3a1.5 1.5 0 0 0 1.5-1.5v-2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                <circle cx="9.2" cy="10.3" r=".9" fill="currentColor"/>
+                <circle cx="14.8" cy="10.3" r=".9" fill="currentColor"/>
+                <path d="M9.3 14.4c1.6 1.2 3.8 1.2 5.4 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span id="faceBadgeText">0 rostros</span>
+            </div>
+          </div>
+
+          <div class="stage__status" id="stageStatus" data-state="working" role="status" aria-live="polite" hidden>
+            <span class="stage__status-icon" id="stageStatusIcon" aria-hidden="true"></span>
+            <span id="stageStatusText">Analizando rostro…</span>
+          </div>
+
+          <span class="stage__corner stage__corner--tl" aria-hidden="true"></span>
+          <span class="stage__corner stage__corner--tr" aria-hidden="true"></span>
+          <span class="stage__corner stage__corner--bl" aria-hidden="true"></span>
+          <span class="stage__corner stage__corner--br" aria-hidden="true"></span>
+        </div>
+
+        <div class="stage-footer">
+          <div class="control-group" role="group" aria-label="Controles de análisis">
+            <button class="btn btn--primary" id="startCameraBtn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M15 8.5 13.8 6H9.2L8 8.5H5.8A2.3 2.3 0 0 0 3.5 10.8v6.4a2.3 2.3 0 0 0 2.3 2.3h11.4a2.3 2.3 0 0 0 2.3-2.3v-6.4A2.3 2.3 0 0 0 17.2 8.5H15Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                <circle cx="11.5" cy="14" r="3.2" stroke="currentColor" stroke-width="1.7"/>
+              </svg>
+              Activar cámara
+            </button>
+            <button class="btn btn--secondary" id="uploadBtn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 15.5V4m0 0L7.8 8.2M12 4l4.2 4.2M5 14v4.2A1.8 1.8 0 0 0 6.8 20h10.4a1.8 1.8 0 0 0 1.8-1.8V14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Subir fotografía
+            </button>
+            <button class="btn btn--danger" id="stopBtn" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="6.5" y="6.5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/>
+              </svg>
+              Detener cámara
+            </button>
+            <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,image/jpeg,image/png" hidden>
+          </div>
+          <p class="privacy-note">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="5" y="10" width="14" height="10" rx="2.5" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M8.5 10V7.8a3.5 3.5 0 1 1 7 0V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M12 14.2v2.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            Procesamiento local · Sin almacenamiento
+          </p>
+        </div>
+      </div>
+
+      <div class="stage-tips">
+        <span><kbd>Consejo</kbd> Busca una luz frontal suave y mira hacia la cámara.</span>
+        <span><kbd>Privacidad</kbd> Las imágenes se procesan en memoria y se descartan.</span>
+      </div>
+    </section>
+
+    <aside class="results-panel" id="resultsPanel" aria-labelledby="resultsTitle">
+      <div class="results-header">
+        <div>
+          <p class="eyebrow">Salida del modelo</p>
+          <h2 id="resultsTitle">Resultados</h2>
+        </div>
+        <span class="results-meta" id="resultsMeta">En espera</span>
+      </div>
+
+      <div class="results-content" id="resultsContent" aria-live="polite">
+        <div class="results-empty" id="resultsEmpty">
+          <div class="results-empty__icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none">
+              <rect x="10" y="10" width="44" height="44" rx="13" stroke="currentColor" stroke-opacity=".2" stroke-width="1.6" stroke-dasharray="4 5"/>
+              <path d="M32 18v28M18 32h28" stroke="currentColor" stroke-opacity=".18" stroke-width="1.4" stroke-linecap="round"/>
+              <circle cx="32" cy="30" r="9" stroke="currentColor" stroke-opacity=".5" stroke-width="1.7"/>
+              <path d="M24 46c2.2-4.1 4.9-6.1 8-6.1s5.8 2 8 6.1" stroke="currentColor" stroke-opacity=".5" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3>Aún no hay resultados</h3>
+          <p>Cuando detectemos un rostro, verás aquí la edad aparente y la emoción predominante.</p>
+        </div>
+
+        <div class="results-loading" id="resultsLoading" hidden aria-label="Analizando imagen">
+          <div class="skeleton skeleton--summary"></div>
+          <div class="skeleton skeleton--card"></div>
+          <div class="skeleton skeleton--line"></div>
+        </div>
+
+        <div class="results-no-face" id="resultsNoFace" hidden>
+          <div class="results-no-face__icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none">
+              <path d="M16 21v-4a4 4 0 0 1 4-4h4M44 13h4a4 4 0 0 1 4 4v4M16 43v4a4 4 0 0 0 4 4h4M44 51h4a4 4 0 0 0 4-4v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <circle cx="32" cy="30" r="10" stroke="currentColor" stroke-opacity=".55" stroke-width="1.8"/>
+              <path d="M23 47c2.4-4.3 5.4-6.5 9-6.5s6.6 2.2 9 6.5" stroke="currentColor" stroke-opacity=".55" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M8 8l48 48" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h3 id="noFaceTitle">No encontramos un rostro</h3>
+          <p id="noFaceText">Acércate un poco, mejora la iluminación y mantén el rostro de frente.</p>
+          <button class="btn btn--ghost btn--small" id="retryPhotoBtn" type="button" hidden>
+            Probar con otra foto
+          </button>
+        </div>
+
+        <div class="results-list" id="resultsList" hidden></div>
+      </div>
+
+      <div class="panel-footnote">
+        <span class="footnote-dot" aria-hidden="true"></span>
+        <p>La edad es una estimación visual. Los resultados varían según la luz, el ángulo y la resolución.</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <span>FaceEdit · Visión artificial local</span>
+    <span>OpenCV + DeepFace</span>
+  </footer>
+
+  <div class="toast-stack" id="toastStack" aria-live="assertive" aria-atomic="false"></div>
+
+  <noscript>
+    <div class="noscript">FaceEdit necesita JavaScript para acceder a la cámara y mostrar el análisis.</div>
+  </noscript>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+</body>
+</html>
