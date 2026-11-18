@@ -30,6 +30,8 @@ _MODEL_PATH = (
 # detecciones en fondos, muebles o texturas; 0.80 mantiene rostros reales.
 _SCORE_THRESHOLD = 0.80
 _NMS_THRESHOLD = 0.30
+# Fracción mínima del recuadro del rostro que debe quedar dentro de la imagen.
+_MIN_VISIBLE_FRACTION = 0.85
 _MIN_ASPECT_RATIO = 0.50
 _MAX_ASPECT_RATIO = 1.90
 
@@ -192,6 +194,16 @@ class FaceDetector:
             clipped_w = right - left
             clipped_h = bottom - top
 
+            # Rostros cortados por el borde (p. ej. solo boca y barbilla): sus
+            # edades y emociones no son fiables, se descartan.
+            visible = (max(0, clipped_w) * max(0, clipped_h)) / (box_w * box_h)
+            if visible < _MIN_VISIBLE_FRACTION:
+                continue
+            if not self._landmarks_inside(detection, width, height):
+                continue
+            if self._is_truncated(detection, x, y, box_w, box_h, width, height):
+                continue
+
             if clipped_w < min_face or clipped_h < min_face:
                 continue
 
@@ -203,6 +215,57 @@ class FaceDetector:
             boxes.append(FaceBox(left, top, clipped_w, clipped_h, points))
 
         return boxes
+
+    @staticmethod
+    def _is_truncated(
+        detection: np.ndarray,
+        x: float,
+        y: float,
+        box_w: float,
+        box_h: float,
+        width: int,
+        height: int,
+        edge: float = 3.0,
+    ) -> bool:
+        """Detecta rostros que se salen por un borde de la imagen.
+
+        YuNet da puntuaciones altas a caras cortadas (por ejemplo, solo boca y
+        barbilla). Si el recuadro toca un borde y los ojos o la boca quedan
+        pegados a él, la frente o la barbilla están fuera de la imagen y las
+        estimaciones de edad y emoción no son fiables.
+        """
+
+        if detection.shape[0] < 14:
+            return False
+        eyes_y = (float(detection[5]), float(detection[7]))
+        eyes_x = (float(detection[4]), float(detection[6]))
+        mouth_y = (float(detection[11]), float(detection[13]))
+        mouth_x = (float(detection[10]), float(detection[12]))
+        xs = eyes_x + mouth_x
+        slack_y = box_h * 0.25
+        slack_x = box_w * 0.20
+
+        if y <= edge and min(eyes_y) - y < slack_y:
+            return True
+        if y + box_h >= height - edge and (y + box_h) - max(mouth_y) < slack_y * 0.6:
+            return True
+        if x <= edge and min(xs) - x < slack_x:
+            return True
+        if x + box_w >= width - edge and (x + box_w) - max(xs) < slack_x:
+            return True
+        return False
+
+    @staticmethod
+    def _landmarks_inside(detection: np.ndarray, width: int, height: int) -> bool:
+        """Todos los puntos faciales (ojos, nariz, boca) deben verse en la imagen."""
+
+        if detection.shape[0] < 14:
+            return True
+        for i in range(4, 14, 2):
+            px, py = float(detection[i]), float(detection[i + 1])
+            if not (0 <= px < width and 0 <= py < height):
+                return False
+        return True
 
     @staticmethod
     def _landmarks_plausible(
