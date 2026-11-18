@@ -48,7 +48,10 @@ EMOTION_LABELS = {
     "neutral": "Neutral",
 }
 
-ENGINE_NAME = "MiVOLO v2 + DeepFace · ONNX Runtime"
+# Peso aplicado a la probabilidad de "neutral" antes de elegir la emoción.
+NEUTRAL_WEIGHT = 0.6
+
+ENGINE_NAME ="MiVOLO v2 + DeepFace · ONNX Runtime"
 
 _AGE_MODEL_PATH = Path(__file__).resolve().parent / "models" / "mivolo_v2_age.onnx"
 _AGE_INPUT_SIZE = 384
@@ -245,22 +248,22 @@ class FaceAnalyzer:
 
                 try:
                     crop = self._crop_face(image_bgr, box)
-                    actions = (
-                        ("emotion",)
-                        if self._age_backend == "mivolo"
-                        else ("age", "emotion")
-                    )
-                    raw = deepface.analyze(
-                        crop,
-                        actions=actions,
-                        enforce_detection=False,
-                        detector_backend="skip",
-                        align=False,
-                        silent=True,
-                    )
-                    item = self._first_result(raw)
+                    face = self._aligned_face(image_bgr, box)
+
+                    emotion_scores = self._emotion_scores(deepface, face)
                     if self._age_backend == "mivolo":
-                        item = {**item, "age": self._estimate_age(crop)}
+                        age = (
+                            self._estimate_age(crop)
+                            + self._estimate_age(np.ascontiguousarray(crop[:, ::-1]))
+                        ) / 2.0
+                    else:
+                        age = self._deepface_age(deepface, face)
+
+                    item = {
+                        "emotion": emotion_scores,
+                        "dominant_emotion": max(emotion_scores, key=emotion_scores.get),
+                        "age": age,
+                    }
                     result = self._normalize_result(item, base_result)
                     results.append(result)
                 except Exception:
@@ -271,6 +274,93 @@ class FaceAnalyzer:
                     results.append(base_result)
 
             return results
+
+    # ------------------------------------------------------------------
+    # Preparación del rostro y puntuación de emociones
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _aligned_face(
+        image_bgr: np.ndarray, box: FaceBox, margin: float = 0.05
+    ) -> np.ndarray:
+        """Recorte ajustado al rostro, con los ojos nivelados si hay landmarks.
+
+        Los modelos de emoción y edad de DeepFace se entrenaron con rostros
+        ajustados y alineados; con recortes holgados o inclinados tienden a
+        responder "neutral" y a envejecer al sujeto.
+        """
+
+        height, width = image_bgr.shape[:2]
+        source = image_bgr
+        face_box = box
+
+        if box.landmarks and len(box.landmarks) >= 2:
+            (rx, ry), (lx, ly) = box.landmarks[0], box.landmarks[1]
+            angle = math.degrees(math.atan2(ly - ry, lx - rx))
+            if abs(angle) > 1.5 and abs(angle) < 40:
+                center = (box.x + box.w / 2.0, box.y + box.h / 2.0)
+                matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+                source = cv2.warpAffine(
+                    image_bgr,
+                    matrix,
+                    (width, height),
+                    flags=cv2.INTER_LINEAR,
+                    borderMode=cv2.BORDER_REPLICATE,
+                )
+
+        margin_x = int(face_box.w * margin)
+        margin_y = int(face_box.h * margin)
+        left = max(0, face_box.x - margin_x)
+        top = max(0, face_box.y - margin_y)
+        right = min(width, face_box.x + face_box.w + margin_x)
+        bottom = min(height, face_box.y + face_box.h + margin_y)
+        crop = source[top:bottom, left:right]
+        if crop.size == 0:
+            raise ValueError("Recorte facial vacío.")
+
+        # Realce de contraste local: las cámaras IP suelen dar imágenes
+        # planas y borrosas donde las expresiones casi no se distinguen.
+        lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+        lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+        return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    def _run_deepface(self, deepface: Any, face: np.ndarray, action: str) -> dict[str, Any]:
+        raw = deepface.analyze(
+            face,
+            actions=(action,),
+            enforce_detection=False,
+            detector_backend="skip",
+            align=False,
+            silent=True,
+        )
+        return self._first_result(raw)
+
+    def _emotion_scores(self, deepface: Any, face: np.ndarray) -> dict[str, float]:
+        """Promedia la emoción del rostro y de su espejo y corrige el sesgo neutral."""
+
+        totals: dict[str, float] = {}
+        variants = (face, np.ascontiguousarray(face[:, ::-1]))
+        for variant in variants:
+            scores = self._run_deepface(deepface, variant, "emotion").get("emotion", {})
+            for key, value in scores.items():
+                totals[str(key)] = totals.get(str(key), 0.0) + float(value) / len(variants)
+
+        # El modelo FER de DeepFace favorece "neutral" con imágenes de poca
+        # calidad. Se atenúa para que las expresiones suaves puedan destacar.
+        if "neutral" in totals:
+            totals["neutral"] *= NEUTRAL_WEIGHT
+        total = sum(totals.values())
+        if total <= 0:
+            return {"neutral": 100.0}
+        return {key: value * 100.0 / total for key, value in totals.items()}
+
+    def _deepface_age(self, deepface: Any, face: np.ndarray) -> float:
+        """Edad de respaldo con DeepFace: promedio del rostro y su espejo."""
+
+        ages = []
+        for variant in (face, np.ascontiguousarray(face[:, ::-1])):
+            ages.append(float(self._run_deepface(deepface, variant, "age")["age"]))
+        return sum(ages) / len(ages)
 
     def _estimate_age(self, face_bgr: np.ndarray) -> float:
         """Estima la edad con la entrada facial del modelo MiVOLO v2."""

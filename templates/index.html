@@ -94,6 +94,7 @@
           </div>
 
           <video class="stage__media stage__media--video" id="cameraFeed" playsinline muted autoplay hidden></video>
+          <img class="stage__media stage__media--tapo" id="tapoFeed" alt="Vídeo de la cámara Tapo" hidden>
           <canvas class="stage__media stage__media--photo" id="photoCanvas" hidden aria-label="Fotografía cargada para analizar"></canvas>
           <canvas class="stage__overlay" id="overlayCanvas" aria-hidden="true" hidden></canvas>
 
@@ -134,6 +135,13 @@
                 <circle cx="11.5" cy="14" r="3.2" stroke="currentColor" stroke-width="1.7"/>
               </svg>
               Activar cámara
+            </button>
+            <button class="btn btn--secondary" id="tapoBtn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="1.7"/>
+                <circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.7"/>
+              </svg>
+              Cámara Tapo
             </button>
             <button class="btn btn--secondary" id="uploadBtn" type="button">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">

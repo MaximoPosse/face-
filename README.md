@@ -109,6 +109,27 @@ python app.py
 
 ---
 
+## Cámara IP TP-Link Tapo (C200)
+
+1. En la app Tapo: **Configuración de la cámara → Avanzado → Cuenta de cámara**
+   y crea un usuario y contraseña (no son los de tu cuenta TP-Link).
+2. Fija una IP al equipo en el router (reserva DHCP) y anótala.
+3. Antes de ejecutar la app:
+
+```powershell
+$env:TAPO_IP = "192.168.1.50"
+$env:TAPO_USER = "tu_usuario_de_camara"
+$env:TAPO_PASSWORD = "tu_contraseña_de_camara"
+# Opcional: stream2 = menor resolución, más fluido
+# $env:TAPO_STREAM = "stream2"
+python app.py
+```
+
+4. En la web pulsa **Cámara Tapo**. El servidor lee el RTSP
+   (`rtsp://usuario:clave@IP:554/stream1`) y reenvía el vídeo al navegador.
+
+---
+
 ## Uso
 
 1. Pulsa **Activar cámara** y concede el permiso al navegador, o pulsa

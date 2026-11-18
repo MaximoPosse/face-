@@ -459,6 +459,10 @@ svg {
   transform: scaleX(-1);
 }
 
+.stage__media--tapo {
+  object-fit: contain;
+}
+
 .stage__media--photo {
   object-fit: contain;
   background: var(--white);
@@ -472,6 +476,10 @@ svg {
 
 .stage.is-camera .stage__overlay {
   object-fit: cover;
+}
+
+.stage.is-tapo .stage__overlay {
+  object-fit: contain;
 }
 
 /* Línea de escaneo */

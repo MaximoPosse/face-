@@ -80,6 +80,8 @@
     emptyCameraBtn: $("emptyCameraBtn"),
     emptyUploadBtn: $("emptyUploadBtn"),
     cameraFeed: $("cameraFeed"),
+    tapoFeed: $("tapoFeed"),
+    tapoBtn: $("tapoBtn"),
     photoCanvas: $("photoCanvas"),
     overlayCanvas: $("overlayCanvas"),
     scanLine: $("scanLine"),
@@ -111,6 +113,7 @@
   const state = {
     mode: "idle", // idle | camera | photo
     stream: null,
+    tapo: false, // true cuando la fuente en vivo es la cámara IP Tapo
     cameraStarting: false,
     timer: null,
     requestSeq: 0,
@@ -251,6 +254,8 @@
     const cameraActive = state.mode === "camera";
     els.startCameraBtn.disabled = cameraActive || state.cameraStarting;
     els.startCameraBtn.setAttribute("aria-busy", String(state.cameraStarting));
+    els.tapoBtn.disabled = cameraActive || state.cameraStarting;
+    els.tapoBtn.setAttribute("aria-busy", String(state.cameraStarting));
     els.stopBtn.disabled = !cameraActive;
     els.uploadBtn.disabled = state.fileBusy;
     els.emptyCameraBtn.disabled = state.cameraStarting;
@@ -263,7 +268,9 @@
   function showMediaMode(mode) {
     state.mode = mode;
     els.emptyState.hidden = true;
-    els.cameraFeed.hidden = mode !== "camera";
+    els.cameraFeed.hidden = mode !== "camera" || state.tapo;
+    els.tapoFeed.hidden = mode !== "camera" || !state.tapo;
+    els.stage.classList.toggle("is-tapo", mode === "camera" && state.tapo);
     els.photoCanvas.hidden = mode !== "photo";
     els.stageHud.hidden = false;
     els.modeLabel.textContent = mode === "camera" ? "EN VIVO" : "IMAGEN";
@@ -286,13 +293,14 @@
     els.cameraFeed.pause();
     els.cameraFeed.srcObject = null;
     els.cameraFeed.hidden = true;
+    releaseTapo();
     els.photoCanvas.hidden = true;
     els.overlayCanvas.hidden = true;
     els.emptyState.hidden = false;
     els.stageHud.hidden = true;
     els.scanLine.hidden = true;
     els.stageStatus.hidden = true;
-    els.stage.classList.remove("is-camera", "is-photo", "is-analyzing");
+    els.stage.classList.remove("is-camera", "is-photo", "is-analyzing", "is-tapo");
     clearResults();
     setButtonState();
   }
@@ -313,6 +321,7 @@
     els.cameraFeed.pause();
     els.cameraFeed.srcObject = null;
     els.cameraFeed.hidden = true;
+    releaseTapo();
 
     if (reset) {
       resetUI();
@@ -471,9 +480,127 @@
     }
   }
 
+  /* ------------------------------------------------------------------
+     Cámara IP Tapo (RTSP en el servidor, MJPEG hacia el navegador)
+     ------------------------------------------------------------------ */
+
+  function releaseTapo() {
+    if (!state.tapo && els.tapoFeed.hidden) {
+      return;
+    }
+    state.tapo = false;
+    els.tapoFeed.removeAttribute("src"); // corta la conexión del stream
+    els.tapoFeed.hidden = true;
+    els.stage.classList.remove("is-tapo");
+    fetch("/api/tapo/stop", { method: "POST", cache: "no-store" }).catch(() => {});
+  }
+
+  const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  async function waitForTapo(epoch, timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs;
+    let lastError = null;
+    while (Date.now() < deadline) {
+      if (epoch !== state.epoch) {
+        return { cancelled: true };
+      }
+      try {
+        const response = await fetch("/api/tapo/status", { cache: "no-store" });
+        const status = await response.json();
+        if (status.connected) {
+          return { connected: true };
+        }
+        lastError = status.error || lastError;
+      } catch {
+        // el servidor puede tardar un instante; se reintenta
+      }
+      await sleep(600);
+    }
+    return { connected: false, error: lastError };
+  }
+
+  function waitForTapoImage(epoch) {
+    return new Promise((resolve, reject) => {
+      const img = els.tapoFeed;
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("La cámara Tapo tardó demasiado en mostrar imagen."));
+      }, 12000);
+      const check = window.setInterval(() => {
+        if (epoch !== state.epoch) {
+          cleanup();
+          resolve(false);
+        } else if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          cleanup();
+          resolve(true);
+        }
+      }, 150);
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        window.clearInterval(check);
+      };
+    });
+  }
+
+  async function startTapo() {
+    if (state.mode === "camera" || state.cameraStarting) {
+      return;
+    }
+
+    stopCamera({ reset: true });
+    state.cameraStarting = true;
+    const epoch = state.epoch;
+    setButtonState();
+    showStageStatus("Conectando con la cámara Tapo…", "working", 0);
+
+    try {
+      const response = await fetch("/api/tapo/start", { method: "POST", cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error?.message || "No se pudo iniciar la cámara Tapo.");
+      }
+
+      const result = await waitForTapo(epoch);
+      if (result.cancelled) {
+        return;
+      }
+      if (!result.connected) {
+        throw new Error(
+          result.error || "No se pudo conectar con la cámara Tapo. Revisa IP y credenciales.",
+        );
+      }
+
+      state.tapo = true;
+      state.cameraStarting = false;
+      els.tapoFeed.src = `/api/tapo/stream?t=${Date.now()}`;
+      showMediaMode("camera");
+
+      const ready = await waitForTapoImage(epoch);
+      if (!ready || epoch !== state.epoch) {
+        return;
+      }
+
+      syncOverlayToVideo();
+      els.resultsMeta.textContent = "Esperando rostro";
+      showStageStatus("Cámara Tapo activa · buscando rostro", "success", 2400);
+      scheduleCameraAnalysis(500);
+    } catch (error) {
+      if (epoch === state.epoch) {
+        stopCamera({ reset: true });
+        fetch("/api/tapo/stop", { method: "POST", cache: "no-store" }).catch(() => {});
+        toast(error?.message || "No se pudo conectar con la cámara Tapo.", "error", 8000);
+      }
+    } finally {
+      if (state.cameraStarting) {
+        state.cameraStarting = false;
+        setButtonState();
+      }
+    }
+  }
+
   function syncOverlayToVideo() {
-    const width = els.cameraFeed.videoWidth;
-    const height = els.cameraFeed.videoHeight;
+    const width = state.tapo ? els.tapoFeed.naturalWidth : els.cameraFeed.videoWidth;
+    const height = state.tapo ? els.tapoFeed.naturalHeight : els.cameraFeed.videoHeight;
     if (!width || !height) {
       return;
     }
@@ -523,6 +650,17 @@
   }
 
   async function captureCameraFrame() {
+    if (state.tapo) {
+      try {
+        const response = await fetch(`/api/tapo/frame.jpg?t=${Date.now()}`, {
+          cache: "no-store",
+        });
+        return response.ok ? await response.blob() : null;
+      } catch {
+        return null;
+      }
+    }
+
     const video = els.cameraFeed;
     if (!video.videoWidth || !video.videoHeight || video.readyState < 2) {
       return null;
@@ -1213,7 +1351,7 @@
     }
 
     canvas.hidden = false;
-    const mirrored = state.mode === "camera";
+    const mirrored = state.mode === "camera" && !state.tapo;
     const baseLine = Math.max(2, width / 540);
     const labelFont = clamp(width * 0.0165, 13, 21);
 
@@ -1332,6 +1470,7 @@
   function bindEvents() {
     els.startCameraBtn.addEventListener("click", startCamera);
     els.emptyCameraBtn.addEventListener("click", startCamera);
+    els.tapoBtn.addEventListener("click", startTapo);
     els.stopBtn.addEventListener("click", () => stopCamera({ reset: true }));
 
     const openFilePicker = () => {
@@ -1364,6 +1503,9 @@
       }
       if (state.activeRequest) {
         state.activeRequest.controller.abort();
+      }
+      if (state.tapo) {
+        navigator.sendBeacon?.("/api/tapo/stop");
       }
     });
   }

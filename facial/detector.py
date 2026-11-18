@@ -42,6 +42,9 @@ class FaceBox:
     y: int
     w: int
     h: int
+    # Ojo derecho, ojo izquierdo, nariz, comisuras de la boca (x, y en píxeles).
+    # Solo los entrega YuNet; sirven para alinear el rostro antes del análisis.
+    landmarks: tuple[tuple[float, float], ...] | None = None
 
     @property
     def area(self) -> int:
@@ -192,7 +195,12 @@ class FaceDetector:
             if clipped_w < min_face or clipped_h < min_face:
                 continue
 
-            boxes.append(FaceBox(left, top, clipped_w, clipped_h))
+            points = None
+            if detection.shape[0] >= 14:
+                points = tuple(
+                    (float(detection[i]), float(detection[i + 1])) for i in range(4, 14, 2)
+                )
+            boxes.append(FaceBox(left, top, clipped_w, clipped_h, points))
 
         return boxes
 

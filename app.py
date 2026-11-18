@@ -9,12 +9,27 @@ import threading
 import time
 from pathlib import Path
 
+# RTSP por TCP es mucho más estable que UDP con la Tapo (sin cortes ni artefactos).
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|stimeout;5000000"
+)
+
 import cv2
 import numpy as np
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    stream_with_context,
+    url_for,
+)
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from facial import AnalyzerUnavailable, FaceAnalyzer, FaceDetector
+from facial.tapo import tapo_camera
 
 # La consola de Windows puede usar cp1252 por defecto. DeepFace imprime emojis
 # al descargar sus modelos; evitamos que un error de codificación interrumpa
@@ -156,6 +171,55 @@ def health():
     )
 
 
+@app.get("/api/tapo/status")
+def tapo_status():
+    return jsonify({"ok": True, **tapo_camera.status()})
+
+
+@app.post("/api/tapo/start")
+def tapo_start():
+    try:
+        tapo_camera.start()
+    except RuntimeError as exc:
+        return _json_error(str(exc), 400, "tapo_not_configured")
+    return jsonify({"ok": True, **tapo_camera.status()})
+
+
+@app.post("/api/tapo/stop")
+def tapo_stop():
+    tapo_camera.stop()
+    return jsonify({"ok": True, **tapo_camera.status()})
+
+
+@app.get("/api/tapo/frame.jpg")
+def tapo_frame():
+    data = tapo_camera.latest_jpeg()
+    if data is None:
+        return _json_error("La cámara aún no entrega imagen.", 503, "tapo_no_frame")
+    return Response(data, mimetype="image/jpeg")
+
+
+@app.get("/api/tapo/stream")
+def tapo_stream():
+    """Vídeo MJPEG para mostrar en un <img> de la interfaz."""
+
+    def generate():
+        while tapo_camera.status()["running"]:
+            data = tapo_camera.latest_jpeg(quality=80)
+            if data is not None:
+                yield (
+                    b"--frame\r\nContent-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(data)).encode() + b"\r\n\r\n"
+                    + data + b"\r\n"
+                )
+            time.sleep(0.07)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
 @app.post("/api/analyze")
 def analyze():
     started = time.perf_counter()
@@ -219,8 +283,7 @@ def add_security_headers(response):
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "img-src 'self' blob: data:; "
-            "media-src 'self' blob:; "
-            "style-src 'self' 'unsafe-inline'; "
+            "media-src 'self' blob:; "            "style-src 'self' 'unsafe-inline'; "
             "script-src 'self'; "
             "connect-src 'self'; "
             "font-src 'self'; "
