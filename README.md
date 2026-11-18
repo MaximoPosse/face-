@@ -130,6 +130,19 @@ python app.py
 
 ---
 
+### Ejecutable para Windows
+
+Con PyInstaller se genera `dist\FaceEdit\FaceEdit.exe` (sin Python ni internet).
+`installer\FaceEdit.iss` (Inno Setup 6) crea `FaceEdit_Setup.exe`, que pide la IP,
+usuario y contraseña de la Tapo durante la instalación y los guarda en `config.ini`.
+También existe una versión portable (`FaceEdit_Portable.zip`): al abrir
+`FaceEdit.exe` por primera vez se muestra la página `/setup` para escribir esos
+datos; se pueden cambiar después desde «Configurar cámara Tapo».
+
+> Los `.exe` no están firmados: Windows 11 con *Smart App Control* los bloquea.
+
+---
+
 ## Uso
 
 1. Pulsa **Activar cámara** y concede el permiso al navegador, o pulsa

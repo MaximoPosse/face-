@@ -24,3 +24,8 @@ Thumbs.db
 # Archivos temporales de pruebas
 tmp/
 *.log
+
+# Empaquetado
+dist/
+build/
+installer/output/

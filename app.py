@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import socket
 import sys
 import threading
 import time
@@ -29,7 +31,10 @@ from flask import (
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from facial import AnalyzerUnavailable, FaceAnalyzer, FaceDetector
+from facial.config import current_config, load_local_config, save_local_config
 from facial.tapo import tapo_camera
+
+load_local_config()
 
 # La consola de Windows puede usar cp1252 por defecto. DeepFace imprime emojis
 # al descargar sus modelos; evitamos que un error de codificación interrumpa
@@ -169,6 +174,90 @@ def health():
             },
         }
     )
+
+
+_HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]{1,252}$")
+
+
+def _same_origin() -> bool:
+    """Evita que otra página web cambie la configuración desde el navegador."""
+
+    origin = request.headers.get("Origin")
+    return not origin or origin.rstrip("/") == request.host_url.rstrip("/")
+
+
+@app.get("/setup")
+def setup_page():
+    return render_template("setup.html")
+
+
+@app.get("/api/config")
+def get_config():
+    return jsonify({"ok": True, **current_config()})
+
+
+@app.post("/api/config")
+def save_config():
+    if not _same_origin():
+        return _json_error("Origen no permitido.", 403, "forbidden")
+
+    data = request.get_json(silent=True) or {}
+    ip = str(data.get("ip", "")).strip()
+    user = str(data.get("user", "")).strip()
+    password = str(data.get("password", ""))
+    stream = str(data.get("stream", "stream1")).strip()
+
+    if stream not in {"stream1", "stream2"}:
+        stream = "stream1"
+    if not password and ip and ip == os.environ.get("TAPO_IP", ""):
+        password = os.environ.get("TAPO_PASSWORD", "")  # editar sin reescribirla
+
+    if ip:
+        if not _HOST_RE.match(ip):
+            return _json_error("La dirección IP no es válida.", 400, "invalid_ip")
+        if not user or not password:
+            return _json_error(
+                "Escribe el usuario y la contraseña de la cuenta de cámara.",
+                400,
+                "missing_credentials",
+            )
+    if any(c in value for value in (ip, user, password) for c in "\r\n"):
+        return _json_error("Los datos contienen caracteres no válidos.", 400, "invalid_chars")
+    if max(len(ip), len(user), len(password)) > 128:
+        return _json_error("Algún dato es demasiado largo.", 400, "too_long")
+
+    tapo_camera.stop()
+    try:
+        save_local_config(ip, user, password, stream)
+    except OSError:
+        logger.exception("No se pudo guardar config.ini")
+        return _json_error("No se pudo guardar la configuración.", 500, "save_failed")
+    return jsonify({"ok": True, **current_config()})
+
+
+@app.post("/api/config/test")
+def test_config():
+    """Comprueba que el puerto RTSP de la cámara responde desde este equipo."""
+
+    if not _same_origin():
+        return _json_error("Origen no permitido.", 403, "forbidden")
+    data = request.get_json(silent=True) or {}
+    ip = str(data.get("ip", "")).strip()
+    if not _HOST_RE.match(ip):
+        return _json_error("La dirección IP no es válida.", 400, "invalid_ip")
+    try:
+        with socket.create_connection((ip, 554), timeout=3):
+            pass
+    except OSError:
+        return jsonify(
+            {
+                "ok": False,
+                "reachable": False,
+                "message": "No se pudo conectar con la cámara (puerto 554). Revisa la IP y "
+                "que el equipo esté en la misma red; algunas redes WiFi bloquean este puerto.",
+            }
+        )
+    return jsonify({"ok": True, "reachable": True, "message": "La cámara responde."})
 
 
 @app.get("/api/tapo/status")
